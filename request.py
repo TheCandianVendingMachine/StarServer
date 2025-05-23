@@ -1,12 +1,14 @@
 from urllib.parse import urljoin
-from enum import Enum
+from enum import StrEnum
 from settings import GLOBAL_CONFIGURATION 
+from base64 import b64encode
+import os
 
 GLOBAL_CONFIGURATION.require('url')
-GLOBAL_CONFIGURATION.require('webhook_secret')
+GLOBAL_CONFIGURATION.require('secret_length')
 GLOBAL_CONFIGURATION.require('user_id')
 
-class Subscription(Enum):
+class Subscription(StrEnum):
     CHANNEL_REWARD_REDEEM = 'channel.channel_points_custom_reward_redemption.add'
 
 class Transport:
@@ -16,7 +18,7 @@ class Transport:
 class Webhook(Transport):
     def __init__(self, path: str):
         self.path = urljoin(GLOBAL_CONFIGURATION.get('url'), path)
-        self.secret = GLOBAL_CONFIGURATION.get('webhook_secret')
+        self.secret = b64encode(os.urandom(int(GLOBAL_CONFIGURATION.get('secret_length')))).decode('utf-8')
 
     def as_dict(self) -> dict:
         return {
@@ -62,7 +64,7 @@ class Request:
 
     def as_dict(self) -> dict:
         return {
-            'type': self.type,
+            'type': str(self.type),
             'version': self.version,
             'condition': self.condition.as_dict(),
             'transport': self.transport.as_dict()
