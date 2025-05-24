@@ -3,6 +3,7 @@ from enum import StrEnum
 from settings import GLOBAL_CONFIGURATION 
 from base64 import b64encode
 import os
+import hmac
 
 GLOBAL_CONFIGURATION.require('url')
 GLOBAL_CONFIGURATION.require('secret_length')

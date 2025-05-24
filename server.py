@@ -1,16 +1,28 @@
 from settings import GLOBAL_CONFIGURATION
 GLOBAL_CONFIGURATION.require('local_secret')
+GLOBAL_CONFIGURATION.require('bonk_id')
 
-import sys
-import json
 import web
 import threading
 import signal
-from web import webapi
+import hmac
+import hashlib
+import secrets
+import json
 
+from web import webapi
 from error import AuthError, LocalHostAuthError
+from request import Request, ChannelRewardRedeem
 
 class State:
+    def __init__(self):
+        self.requests = {
+            'bonk': ChannelRewardRedeem(
+                reward_id=GLOBAL_CONFIGURATION.get('bonk_id'),
+                reward_redeem_path='api/bonk',
+            )
+        }
+
     def _stop():
         print('shutting down...')
         signal.raise_signal(signal.SIGINT)
@@ -21,7 +33,7 @@ class State:
         threading.Timer(1.0, State._stop).start()
 
     def bonk(self):
-        pass
+        print('heads up knucklehead. bonk!!!!')
 
 
 class WebServer(web.application):
@@ -33,24 +45,47 @@ class Endpoints:
     class BaseEndpoint:
         state: State
 
+        def verify(self, request: Request, env: dict, body: str):
+            message_id = env.get('Twitch-EventSub-Message-Id')
+            timestamp = env.get('Twitch-EventSub-Message-Timestamp')
+            signature = env.get('Twitch-EventSub-Message-Signature')
+
+            if message_id is None or timestamp is None or signature is None:
+                raise AuthError()
+
+            secret = request.transport.secret
+            message = f'{message_id}{timestamp}{body}'
+
+            computed_signature = hmac.new(
+                bytes(secret, 'utf-8'),
+                msg=bytes(message, 'utf-8'),
+                digestmod=hashlib.sha256
+            ).hexdigest()
+
+            if not secrets.compare_digest(computed_signature, signature):
+                raise AuthError()
+
+
     class Stop(BaseEndpoint):
         def POST(self):
             data = web.input(secret='')
             try:
                 self.state.shutdown(secret=data.secret)
             except LocalHostAuthError:
-                return webapi.unauthorized()
+                return webapi.forbidden()
             else:
                 return webapi.ok()
 
     class BonkRedeem(BaseEndpoint):
         def POST(self):
-            data = json.loads(web.data())
-            server_info = self.state.reward_redeem(requester=data.requester, server_type=ServerType(data.server_type))
-            if is_err(server_info):
-                return webapi.internalerror(message=str(server_info.unwrap_err()))
-            server_json = json.dumps(server_info.unwrap().dict())
-            return server_json
+            try:
+                self.verify(self.state.requests.get('bonk'), web.ctx.env, web.data())
+            except AuthError as e:
+                print(e)
+                return webapi.forbidden()
+
+            self.state.bonk()
+            return webapi.ok()
 
 class WebHandler:
     def namespace(self):
