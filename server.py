@@ -35,7 +35,6 @@ class State:
     def bonk(self):
         print('heads up knucklehead. bonk!!!!')
 
-
 class WebServer(web.application):
     def run(self, port=8080, *middleware):
         func = self.wsgifunc(*middleware)
