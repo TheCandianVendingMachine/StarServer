@@ -3,11 +3,14 @@ from enum import StrEnum
 from settings import GLOBAL_CONFIGURATION 
 from base64 import b64encode
 import os
-import hmac
+import json
+import requests
 
 GLOBAL_CONFIGURATION.require('url')
 GLOBAL_CONFIGURATION.require('secret_length')
-GLOBAL_CONFIGURATION.require('user_id')
+GLOBAL_CONFIGURATION.require('star_id')
+GLOBAL_CONFIGURATION.require('app_id')
+GLOBAL_CONFIGURATION.require('app_access_token')
 
 class Subscription(StrEnum):
     CHANNEL_REWARD_REDEEM = 'channel.channel_points_custom_reward_redemption.add'
@@ -34,7 +37,7 @@ class Websocket(Transport):
 
 class Condition:
     def __init__(self):
-        self.broadcaster_user_id = GLOBAL_CONFIGURATION.get('user_id')
+        self.broadcaster_user_id = GLOBAL_CONFIGURATION.get('star_id')
 
     def as_dict(self) -> dict:
         raise NotImplementedError()
@@ -62,6 +65,19 @@ class Request:
         self.version = version
         self.condition = condition
         self.transport = transport
+
+        headers = {
+            'Authorization': f'Bearer {GLOBAL_CONFIGURATION.get('app_access_token')}',
+            'Client-Id': f'{GLOBAL_CONFIGURATION.get('app_id')}',
+            'Content-Type': 'application/json'
+        }
+        body = json.dumps(self.as_dict())
+        response = requests.post(
+            'https://api.twitch.tv/helix/eventsub/subscriptions',
+            headers=headers,
+            data=body
+        )
+        print(response.content)
 
     def as_dict(self) -> dict:
         return {
