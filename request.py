@@ -67,7 +67,6 @@ class Request:
         self.condition = condition
         self.transport = transport
         self.id = None
-        self.subscribe()
 
     def subscribe(self):
         headers = {

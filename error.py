@@ -34,10 +34,10 @@ class AppAccessTokenError(Exception):
     def __init__(self):
         super().__init__(f'Failed to generate app access token')
 
-class UserAcccessTokenError(Exception):
+class UserAccessTokenError(Exception):
     def __init__(self):
         super().__init__(f'Failed to generate user access token')
 
-class RefreshUserAcccessTokenError(Exception):
+class RefreshUserAccessTokenError(Exception):
     def __init__(self):
         super().__init__(f'Failed to refresh user access token')

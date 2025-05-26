@@ -13,7 +13,7 @@ import requests
 import keyboard
 
 from web import webapi
-from error import AuthError, LocalHostAuthError, AppAccessTokenError, UserAccessTokenError, RefreshUserAccessTokenError
+from error import AuthError, LocalHostAuthError, AppAccessTokenError, UserAccessTokenError, RefreshUserAccessTokenError, SubscribeError
 from request import Request, ChannelRewardRedeem
 from cheroot.server import HTTPServer
 from cheroot.ssl.builtin import BuiltinSSLAdapter
@@ -42,10 +42,21 @@ class State:
         print('heads up knucklehead. bonk!!!!')
         keyboard.press_and_release('shift+n')
 
+    def subscribe(self):
+        for topic,subscription in self.requests.items():
+            try:
+                print(f'Subscribing "{topic}"')
+                subscription.subscribe()
+            except SubscribeError as e:
+                print(f'Failed to subscribe: {e}')
+
     def unsubscribe(self):
         for topic,subscription in self.requests.items():
-            print(f'Unsubscribing "{topic}"')
-            subscription.unsubscribe()
+            try:
+                print(f'Unsubscribing "{topic}"')
+                subscription.unsubscribe()
+            except UnsubscribeError as e:
+                print(f'Failed to unsubscribe: {e}')
 
     def get_app_access_token(self) -> str:
         response = requests.post(
@@ -159,7 +170,7 @@ class Endpoints:
             access_code = params['code']
             try:
                 GLOBAL_CONFIGURATION['star_oauth'] = self.state.get_user_access_token(access_code)
-            except AppAccessTokenError as e:
+            except UserAccessTokenError as e:
                 return f'<h1>Failed to generate user access token</h1>'
             GLOBAL_CONFIGURATION.write()
             print('Generated and updated user access token to configuration')
@@ -171,8 +182,7 @@ class Endpoints:
             if 'error' in params:
                 return f'<h1>User denied authorization</h1>'
 
-            response_type = params.get('response_type', '')
-            if response_type == 'code':
+            if 'code' in params:
                 return self.authorize_access_tokens(params)
 
             return f'<h1>Homepage</h1>'
