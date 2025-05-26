@@ -166,40 +166,58 @@ class WebServer(web.application):
         func = self.wsgifunc(*middleware)
         return web.httpserver.runsimple(func, ('0.0.0.0', port))
 
+def verify_local(ctx: dict):
+    valid_local_prefix = (
+        '0.',
+        '10.',
+        '127.',
+        '172.16.',
+        '192.0.0.',
+        '192.168.',
+    )
+    ip = ctx.get('ip', '255.255.255.255')
+    if not any([ip.startswith(prefix) for prefix in valid_local_prefix]):
+        raise LocalHostAuthError(ip)
+
+def verify_twitch_webhook(request: Request, env: dict, body: str):
+    message_id = env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_ID')
+    timestamp = env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_TIMESTAMP')
+    signature = env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_SIGNATURE')
+    if message_id is None or timestamp is None or signature is None:
+        raise AuthError()
+
+    secret = request.transport.secret
+    message = f'{message_id}{timestamp}{body.decode('utf-8')}'
+    computed_signature = f'sha256={hmac.new(
+        bytes(secret, 'utf-8'),
+        msg=bytes(message, 'utf-8'),
+        digestmod=hashlib.sha256
+    ).hexdigest()}'
+
+    if not secrets.compare_digest(computed_signature, signature):
+        raise AuthError()
+
+def require_local(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwags)
+        except LocalHostAuthError as e:
+            print(f'Non-local API called from abroad: {e}')
+            return webapi.forbidden()
+    return wrapper
+
+def require_twitch(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwags)
+        except AuthError as e:
+            print(f'Attempt to call a Twitch-only method from not-Twitch: {e}')
+            return webapi.forbidden()
+    return wrapper
+
 class Endpoints:
     class BaseEndpoint:
         state: State
-
-        def verify_local(self, ctx: dict):
-            valid_local_prefix = (
-                '0.',
-                '10.',
-                '127.',
-                '172.16.',
-                '192.0.0.',
-                '192.168.',
-            )
-            ip = ctx.get('ip', '255.255.255.255')
-            if not any([ip.startswith(prefix) for prefix in valid_local_prefix]):
-                raise LocalHostAuthError(ip)
-
-        def verify(self, request: Request, env: dict, body: str):
-            message_id = env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_ID')
-            timestamp = env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_TIMESTAMP')
-            signature = env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_SIGNATURE')
-            if message_id is None or timestamp is None or signature is None:
-                raise AuthError()
-
-            secret = request.transport.secret
-            message = f'{message_id}{timestamp}{body.decode('utf-8')}'
-            computed_signature = f'sha256={hmac.new(
-                bytes(secret, 'utf-8'),
-                msg=bytes(message, 'utf-8'),
-                digestmod=hashlib.sha256
-            ).hexdigest()}'
-
-            if not secrets.compare_digest(computed_signature, signature):
-                raise AuthError()
 
     class Existing(BaseEndpoint):
         def GET(self):
@@ -258,22 +276,14 @@ class Endpoints:
             return f'<h1>Homepage</h1>'
 
     class Stop(BaseEndpoint):
+        @require_local
         def POST(self):
-            try:
-                self.verify_local(web.ctx)
-            except LocalHostAuthError:
-                return webapi.forbidden()
             self.state.shutdown(secret=data.secret)
             return webapi.ok()
 
     class BonkRedeem(BaseEndpoint):
+        @require_twitch
         def POST(self):
-            try:
-                self.verify(self.state.requests.get('bonk'), web.ctx.env, web.data())
-            except AuthError as e:
-                print(e)
-                return webapi.forbidden()
-
             if 'HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE' not in web.ctx.env:
                 return webapi.forbidden()
 
@@ -287,30 +297,20 @@ class Endpoints:
             return webapi.ok()
 
     class Subscribe(BaseEndpoint):
+        @require_local
         def POST(self):
-            try:
-                self.verify_local(web.ctx)
-            except LocalHostAuthError:
-                return webapi.forbidden()
             self.state.subscribe()
             return webapi.ok()
 
     class Unsubscribe(BaseEndpoint):
+        @require_local
         def POST(self):
-            try:
-                self.verify_local(web.ctx)
-            except LocalHostAuthError:
-                return webapi.forbidden()
             self.state.unsubscribe()
             return webapi.ok()
 
     class UnsubscribeAll(BaseEndpoint):
+        @require_local
         def POST(self):
-            try:
-                self.verify_local(web.ctx)
-            except LocalHostAuthError:
-                return webapi.forbidden()
-
             try:
                 subscriptions = self.state.get_all_subscriptions()
             except RefreshUserAccessTokenError:
