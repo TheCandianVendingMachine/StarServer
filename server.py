@@ -181,7 +181,7 @@ class Endpoints:
             )
             ip = ctx.get('ip', '255.255.255.255')
             if not any([ip.startswith(prefix) for prefix in valid_local_prefix]):
-                raise LocalHostAuthError()
+                raise LocalHostAuthError(ip)
 
         def verify(self, request: Request, env: dict, body: str):
             message_id = env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_ID')

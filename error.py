@@ -19,8 +19,8 @@ class AppAccessRefreshNeeded(Exception):
         super().__init__(f'App access token expired')
 
 class LocalHostAuthError(Exception):
-    def __init__(self, secret: str):
-        super().__init__(f'Someone attempted to call a local API with a bad secret: "{secret}"')
+    def __init__(self, ip: str):
+        super().__init__(f'Someone attempted to call a local API from a foreign (non-local) IP: "{ip}"')
 
 class SubscribeError(Exception):
     def __init__(self, status: int):
