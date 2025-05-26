@@ -2,6 +2,7 @@ from settings import GLOBAL_CONFIGURATION
 GLOBAL_CONFIGURATION.require('local_secret')
 GLOBAL_CONFIGURATION.require('bonk_id')
 
+import atexit
 import web
 import threading
 import signal
@@ -43,12 +44,15 @@ class State:
         keyboard.press_and_release('shift+n')
 
     def subscribe(self):
+        success = True
         for topic,subscription in self.requests.items():
             try:
                 print(f'Subscribing "{topic}"')
                 subscription.subscribe()
             except SubscribeError as e:
                 print(f'Failed to subscribe: {e}')
+        if not success:
+            raise SubscribeError(418)
 
     def unsubscribe(self):
         success = True
@@ -260,11 +264,17 @@ class WebHandler:
             endpoint.state = self.state
         self.app = WebServer(mapping=self.urls(), fvars=self.namespace())
 
+    def _exit(self):
+        print('Shutting down server. Bye!!! Bye bye!!! Hope you had a good stream <3')
+        self.state.unsubscribe()
+        print('thats all folks')
+
     def run(self):
-        print('running twitch listen server')
+        print('running stars server! for doing star things! waow!')
         print('-'*50)
         HTTPServer.ssl_adapter = BuiltinSSLAdapter(
             certificate='certs/star.pem',
             private_key='certs/star.priv'
         )
+        atexit.register(WebHandler._exit, self)
         self.app.run(port=443)
