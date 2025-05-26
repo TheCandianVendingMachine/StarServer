@@ -10,6 +10,14 @@ class AuthError(Exception):
     def __init__(self):
         super().__init__(f'Someone attempted to call a API with a bad Twitch secret')
 
+class UserAccessRefreshNeeded(Exception):
+    def __init__(self):
+        super().__init__(f'User access token expired')
+
+class AppAccessRefreshNeeded(Exception):
+    def __init__(self):
+        super().__init__(f'App access token expired')
+
 class LocalHostAuthError(Exception):
     def __init__(self, secret: str):
         super().__init__(f'Someone attempted to call a local API with a bad secret: "{secret}"')
@@ -41,3 +49,12 @@ class UserAccessTokenError(Exception):
 class RefreshUserAccessTokenError(Exception):
     def __init__(self):
         super().__init__(f'Failed to refresh user access token')
+
+class RefreshAppAccessTokenError(Exception):
+    def __init__(self):
+        super().__init__(f'Failed to refresh app access token')
+
+class GetSubscriptionsError(Exception):
+    def __init__(self):
+        super().__init__(f'Failed to get subscriptions')
+

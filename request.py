@@ -2,7 +2,7 @@ from urllib.parse import urljoin
 from enum import StrEnum
 from settings import GLOBAL_CONFIGURATION
 from base64 import b64encode
-from error import SubscribeError, UnsubscribeError, NotSubscribedError
+from error import SubscribeError, UnsubscribeError, NotSubscribedError, AppAccessRefreshNeeded
 import os
 import json
 import requests
@@ -12,6 +12,24 @@ GLOBAL_CONFIGURATION.require('secret_length')
 GLOBAL_CONFIGURATION.require('star_id')
 GLOBAL_CONFIGURATION.require('app_id')
 GLOBAL_CONFIGURATION.require('app_access_token')
+
+def unsubscribe(id: str):
+    headers = {
+        'Authorization': f'Bearer {GLOBAL_CONFIGURATION.get('app_access_token')}',
+        'Client-Id': f'{GLOBAL_CONFIGURATION.get('app_id')}',
+    }
+    response = requests.delete(
+        'https://api.twitch.tv/helix/eventsub/subscriptions',
+        headers=headers,
+        data={ 'id': self.id }
+    )
+
+    if response.status_code == 400:
+        raise UnsubscribeError('Didnt pass in valid ID')
+    elif response.status_code == 401:
+        raise AppAccessRefreshNeeded()
+    elif response.status_code == 404:
+        raise UnsubscribeError('Subscription does not exist')
 
 class Subscription(StrEnum):
     CHANNEL_REWARD_REDEEM = 'channel.channel_points_custom_reward_redemption.add'
@@ -89,22 +107,7 @@ class Request:
     def unsubscribe(self):
         if self.id is None:
             raise NotSubscribedError()
-        headers = {
-            'Authorization': f'Bearer {GLOBAL_CONFIGURATION.get('app_access_token')}',
-            'Client-Id': f'{GLOBAL_CONFIGURATION.get('app_id')}',
-        }
-        response = requests.delete(
-            'https://api.twitch.tv/helix/eventsub/subscriptions',
-            headers=headers,
-            data={ 'id': self.id }
-        )
-
-        if response.status_code == 400:
-            raise UnsubscribeError('Didnt pass in valid ID')
-        elif response.status_code == 401:
-            raise UnsubscribeError('Twitch authorization invalid')
-        elif response.status_code == 404:
-            raise UnsubscribeError('Subscription does not exist')
+        unsubscribe(self.id)
 
     def as_dict(self) -> dict:
         return {

@@ -26,8 +26,8 @@ def get_rewards() -> list[str]:
     return ''
 
 def main():
-    print(f"Star's ID: {get_id()}")
-    print(get_rewards())
+    #print(f"Star's ID: {get_id()}")
+    #print(get_rewards())
     server = WebHandler()
     server.run()
 
