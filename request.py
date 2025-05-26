@@ -1,7 +1,8 @@
 from urllib.parse import urljoin
 from enum import StrEnum
-from settings import GLOBAL_CONFIGURATION 
+from settings import GLOBAL_CONFIGURATION
 from base64 import b64encode
+from error import SubscribeError, UnsubscribeError, NotSubscribedError
 import os
 import json
 import requests
@@ -65,7 +66,10 @@ class Request:
         self.version = version
         self.condition = condition
         self.transport = transport
+        self.id = None
+        self.subscribe()
 
+    def subscribe(self):
         headers = {
             'Authorization': f'Bearer {GLOBAL_CONFIGURATION.get('app_access_token')}',
             'Client-Id': f'{GLOBAL_CONFIGURATION.get('app_id')}',
@@ -77,7 +81,31 @@ class Request:
             headers=headers,
             data=body
         )
-        print(response.content)
+        if response.status_code != 200:
+            raise SubscribeError(response.status_code)
+
+        info = response.content['data'][0]
+        self.id = info['id']
+
+    def unsubscribe(self):
+        if self.id is None:
+            raise NotSubscribedError()
+        headers = {
+            'Authorization': f'Bearer {GLOBAL_CONFIGURATION.get('app_access_token')}',
+            'Client-Id': f'{GLOBAL_CONFIGURATION.get('app_id')}',
+        }
+        response = requests.delete(
+            'https://api.twitch.tv/helix/eventsub/subscriptions',
+            headers=headers,
+            data={ 'id': self.id }
+        )
+
+        if response.status_code == 400:
+            raise UnsubscribeError('Didnt pass in valid ID')
+        elif response.status_code == 401:
+            raise UnsubscribeError('Twitch authorization invalid')
+        elif response.status_code == 404:
+            raise UnsubscribeError('Subscription does not exist')
 
     def as_dict(self) -> dict:
         return {

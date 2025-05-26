@@ -10,25 +10,27 @@ import hashlib
 import secrets
 import json
 import requests
+import keyboard
 
 from web import webapi
-from error import AuthError, LocalHostAuthError
+from error import AuthError, LocalHostAuthError, AppAccessTokenError, UserAccessTokenError, RefreshUserAccessTokenError
 from request import Request, ChannelRewardRedeem
 from cheroot.server import HTTPServer
 from cheroot.ssl.builtin import BuiltinSSLAdapter
 
 class State:
     def __init__(self):
+        self.user_refresh_token = None
         self.requests = {
             'bonk': ChannelRewardRedeem(
                 reward_id=GLOBAL_CONFIGURATION.get('bonk_id'),
                 reward_redeem_path='api/bonk',
             )
         }
-        print(self.requests['bonk'].transport.secret)
 
     def _stop():
         print('shutting down...')
+        self.unsubscribe()
         signal.raise_signal(signal.SIGINT)
 
     def shutdown(self, secret: str):
@@ -38,6 +40,66 @@ class State:
 
     def bonk(self):
         print('heads up knucklehead. bonk!!!!')
+        keyboard.press_and_release('shift+n')
+
+    def unsubscribe(self):
+        for topic,subscription in self.requests.items():
+            print(f'Unsubscribing "{topic}"')
+            subscription.unsubscribe()
+
+    def get_app_access_token(self) -> str:
+        response = requests.post(
+            'https://id.twitch.tv/oauth2/token',
+            data={
+                'client_id': GLOBAL_CONFIGURATION.get('app_id'),
+                'client_secret': GLOBAL_CONFIGURATION.get('client_secret'),
+                'grant_type': 'client_credentials'
+            }
+        )
+        if response.status_code == 200:
+            payload = json.loads(response.content)
+            return payload.get('access_token')
+        else:
+            raise AppAccessTokenError()
+
+    def get_user_access_token(self, code: str) -> str:
+        response = requests.post(
+            'https://id.twitch.tv/oauth2/token',
+            data={
+                'client_id': GLOBAL_CONFIGURATION.get('app_id'),
+                'client_secret': GLOBAL_CONFIGURATION.get('client_secret'),
+                'code': code,
+                'grant_type': 'authorization_code',
+                'redirect_uri': 'https://localhost:443'
+            }
+        )
+        if response.status_code == 200:
+            payload = json.loads(response.content)
+            self.user_refresh_token = payload.get('refresh_token')
+            return payload.get('access_token')
+        else:
+            raise UserAccessTokenError()
+
+    def refresh_user_access_token(self) -> str:
+        if self.user_refresh_token is None:
+            raise RefreshUserAccessTokenError()
+
+        response = requests.post(
+            'https://id.twitch.tv/oauth2/token',
+            data={
+                'client_id': GLOBAL_CONFIGURATION.get('app_id'),
+                'client_secret': GLOBAL_CONFIGURATION.get('client_secret'),
+                'grant_type': 'refresh_token',
+                'refresh_token': self.user_refresh_token
+            }
+        )
+
+        if response.status_code == 400:
+            raise RefreshUserAccessTokenError()
+
+        payload = json.loads(response.content)
+        self.user_refresh_token = payload.get('refresh_token')
+        return payload.get('access_token')
 
 class WebServer(web.application):
     def run(self, port=8080, *middleware):
@@ -85,21 +147,35 @@ class Endpoints:
                 html = html + f'<p>----</p>'
             return html
 
-    class Auth(BaseEndpoint):
+    class AppAccessToken(BaseEndpoint):
+        def authorize_access_tokens(self, params: dict):
+            try:
+                GLOBAL_CONFIGURATION['app_access_token'] = self.state.get_app_access_token()
+            except AppAccessTokenError as e:
+                return f'<h1>Failed to generate app access token</h1>'
+            GLOBAL_CONFIGURATION.write()
+            print('Generated and updated app access token to configuration')
+
+            access_code = params['code']
+            try:
+                GLOBAL_CONFIGURATION['star_oauth'] = self.state.get_user_access_token(access_code)
+            except AppAccessTokenError as e:
+                return f'<h1>Failed to generate user access token</h1>'
+            GLOBAL_CONFIGURATION.write()
+            print('Generated and updated user access token to configuration')
+
+            return f'<h1>Successfully authorized app and user access token</h1>'
+
         def GET(self):
             params = web.input()
-            response = requests.post(
-                'https://id.twitch.tv/oauth2/token',
-                data={
-                    'client_id': GLOBAL_CONFIGURATION.get('app_id'),
-                    'client_secret': GLOBAL_CONFIGURATION.get('client_secret'),
-                    'grant_type': 'client_credentials'
-                }
-            )
-            payload = json.loads(response.content)
-            token = payload.get('access_token')
-            print(token)
-            return f'<h1>Success!</h1>'
+            if 'error' in params:
+                return f'<h1>User denied authorization</h1>'
+
+            response_type = params.get('response_type', '')
+            if response_type == 'code':
+                return self.authorize_access_tokens(params)
+
+            return f'<h1>Homepage</h1>'
 
     class Stop(BaseEndpoint):
         def POST(self):
@@ -136,7 +212,7 @@ class WebHandler:
         return {
             'bonk': Endpoints.BonkRedeem,
             'stop': Endpoints.Stop,
-            'auth': Endpoints.Auth,
+            'app_access_token': Endpoints.AppAccessToken,
             'exists': Endpoints.Existing
         }
 
@@ -145,7 +221,7 @@ class WebHandler:
             '/api/bonk', 'bonk',
             '/local/stop', 'stop',
             '/exists', 'exists',
-            '/', 'auth',
+            '/', 'app_access_token',
         )
 
     def __init__(self):
