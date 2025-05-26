@@ -21,7 +21,7 @@ def unsubscribe(id: str):
     response = requests.delete(
         'https://api.twitch.tv/helix/eventsub/subscriptions',
         headers=headers,
-        data={ 'id': self.id }
+        data={ 'id': id }
     )
 
     if response.status_code == 400:
@@ -98,10 +98,12 @@ class Request:
             headers=headers,
             data=body
         )
-        if response.status_code != 200:
+        if response.status_code >= 300:
             raise SubscribeError(response.status_code)
 
-        info = response.content['data'][0]
+        payload = json.loads(response.content)
+
+        info = payload['data'][0]
         self.id = info['id']
 
     def unsubscribe(self):

@@ -11,19 +11,36 @@ import hashlib
 import secrets
 import json
 import requests
-import keyboard
+import nava
 
-import request
-
+from pynput import keyboard
 from web import webapi
-from error import AuthError, LocalHostAuthError, AppAccessTokenError, UserAccessTokenError, RefreshAppAccessTokenError, RefreshUserAccessTokenError, SubscribeError, GetSubscriptionsError, AppAccessRefreshNeeded
+from error import AuthError, LocalHostAuthError, AppAccessTokenError, UserAccessTokenError, RefreshAppAccessTokenError, RefreshUserAccessTokenError, SubscribeError, UnsubscribeError, GetSubscriptionsError, AppAccessRefreshNeeded
 from request import Request, ChannelRewardRedeem
 from cheroot.server import HTTPServer
 from cheroot.ssl.builtin import BuiltinSSLAdapter
 
+class KeyCommands:
+    def __init__(self):
+        self.keyboard = keyboard.Controller()
+
+    def _stop(self, sequence: list):
+        for key in sequence:
+            self.keyboard.release(key)
+
+    def _play(self, sequence: list):
+        for key in sequence:
+            self.keyboard.press(key)
+        threading.Timer(0.01, KeyCommands._stop, [self, sequence]).start()
+
+    def bonk(self):
+        self._play([keyboard.Key.shift, 'n'])
+        nava.play('bonk.wav')
+
 class State:
     def __init__(self):
         self.user_refresh_token = None
+        self.hotkeys = KeyCommands()
         self.requests = {
             'bonk': ChannelRewardRedeem(
                 reward_id=GLOBAL_CONFIGURATION.get('bonk_id'),
@@ -41,7 +58,7 @@ class State:
 
     def bonk(self):
         print('heads up knucklehead. bonk!!!!')
-        keyboard.press_and_release('shift+n')
+        self.hotkeys.bonk()
 
     def subscribe(self):
         success = True
@@ -105,7 +122,7 @@ class State:
 
     def refresh_user_access_token(self) -> str:
         if self.user_refresh_token is None:
-            raise RefreshAppAccessTokenError()
+            raise RefreshUserAccessTokenError()
 
         response = requests.post(
             'https://id.twitch.tv/oauth2/token',
@@ -153,7 +170,7 @@ class Endpoints:
     class BaseEndpoint:
         state: State
 
-        def verify_local(ctx: dict):
+        def verify_local(self, ctx: dict):
             valid_local_prefix = (
                 '0.',
                 '10.',
@@ -188,7 +205,7 @@ class Endpoints:
         def GET(self):
             try:
                 subscriptions = self.state.get_all_subscriptions()
-            except: RefreshUserAccessTokenError:
+            except RefreshUserAccessTokenError:
                 return '<h1>User authentication is not valid</h1>'
 
             html = '<h1>Subscriptions</h1>'
@@ -243,7 +260,7 @@ class Endpoints:
     class Stop(BaseEndpoint):
         def POST(self):
             try:
-                self.verify_local()
+                self.verify_local(web.ctx)
             except LocalHostAuthError:
                 return webapi.forbidden()
             self.state.shutdown(secret=data.secret)
@@ -272,7 +289,7 @@ class Endpoints:
     class Subscribe(BaseEndpoint):
         def POST(self):
             try:
-                self.verify_local()
+                self.verify_local(web.ctx)
             except LocalHostAuthError:
                 return webapi.forbidden()
             self.state.subscribe()
@@ -281,7 +298,7 @@ class Endpoints:
     class Unsubscribe(BaseEndpoint):
         def POST(self):
             try:
-                self.verify_local()
+                self.verify_local(web.ctx)
             except LocalHostAuthError:
                 return webapi.forbidden()
             self.state.unsubscribe()
@@ -290,13 +307,13 @@ class Endpoints:
     class UnsubscribeAll(BaseEndpoint):
         def POST(self):
             try:
-                self.verify_local()
+                self.verify_local(web.ctx)
             except LocalHostAuthError:
                 return webapi.forbidden()
 
             try:
                 subscriptions = self.state.get_all_subscriptions()
-            except: RefreshUserAccessTokenError:
+            except RefreshUserAccessTokenError:
                 return webapi.forbidden()
 
             def unsub(id, attempt=0):
@@ -312,7 +329,7 @@ class Endpoints:
                     print(f'refreshing app access token ({attempt + 1}/3)')
                     try:
                         GLOBAL_CONFIGURATION['app_access_token'] = self.state.get_app_access_token(access_code)
-                    raise AppAccessTokenError as e:
+                    except AppAccessTokenError as e:
                         print('failed to refresh: {e}')
 
                     unsub(id, attempt + 1)
@@ -356,7 +373,10 @@ class WebHandler:
 
     def _exit(self):
         print('Shutting down server. Bye!!! Bye bye!!! Hope you had a good stream <3')
-        self.state.unsubscribe()
+        try:
+             self.state.unsubscribe()
+        except UnsubscribeError as e:
+             print(f'Failed to unsubscribe: {e}')
         GLOBAL_CONFIGURATION.write()
         print('thats all folks')
 

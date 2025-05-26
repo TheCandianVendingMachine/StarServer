@@ -1,1 +1,0 @@
-Start-Process python main.py

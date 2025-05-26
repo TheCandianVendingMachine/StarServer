@@ -1,3 +1,4 @@
 web.py
 requests
-keyboard
+pynput
+nava

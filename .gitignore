@@ -181,3 +181,4 @@ cython_debug/
 .cursorindexingignore
 
 conf.txt*
+run.ps1
