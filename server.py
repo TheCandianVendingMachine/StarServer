@@ -51,12 +51,16 @@ class State:
                 print(f'Failed to subscribe: {e}')
 
     def unsubscribe(self):
+        success = True
         for topic,subscription in self.requests.items():
             try:
                 print(f'Unsubscribing "{topic}"')
                 subscription.unsubscribe()
             except UnsubscribeError as e:
+                success = False
                 print(f'Failed to unsubscribe: {e}')
+        if not success:
+            raise UnsubscribeError('some subscriptions could not be done')
 
     def get_app_access_token(self) -> str:
         response = requests.post(
@@ -175,7 +179,15 @@ class Endpoints:
             GLOBAL_CONFIGURATION.write()
             print('Generated and updated user access token to configuration')
 
-            return f'<h1>Successfully authorized app and user access token</h1>'
+            try:
+                self.state.subscribe()
+            except SubscribeError as e:
+                return f'<h1>Failed to subscribe to some topics</h1>'
+
+            return f'\
+<h1>Successfully authorized app and user access token</h1>\
+<p>You can close this window</p>\
+'
 
         def GET(self):
             params = web.input()
@@ -217,13 +229,19 @@ class Endpoints:
             self.state.bonk()
             return webapi.ok()
 
+    class Subscribe(BaseEndpoint):
+        def POST(self):
+            self.state.subscribe()
+            return webapi.ok()
+
 class WebHandler:
     def namespace(self):
         return {
             'bonk': Endpoints.BonkRedeem,
             'stop': Endpoints.Stop,
             'app_access_token': Endpoints.AppAccessToken,
-            'exists': Endpoints.Existing
+            'exists': Endpoints.Existing,
+            'subscribe': Endpoints.Subscribe,
         }
 
     def urls(self):
