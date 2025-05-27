@@ -15,7 +15,9 @@ import nava
 
 from pynput import keyboard
 from web import webapi
-from error import AuthError, LocalHostAuthError, AppAccessTokenError, UserAccessTokenError, RefreshAppAccessTokenError, RefreshUserAccessTokenError, SubscribeError, UnsubscribeError, GetSubscriptionsError, AppAccessRefreshNeeded
+from error import AuthError, LocalHostAuthError, AppAccessTokenError, UserAccessTokenError,\
+        RefreshAppAccessTokenError, RefreshUserAccessTokenError, SubscribeError,\
+        UnsubscribeError, GetSubscriptionsError, AppAccessRefreshNeeded
 from request import Request, ChannelRewardRedeem
 from cheroot.server import HTTPServer
 from cheroot.ssl.builtin import BuiltinSSLAdapter
@@ -161,6 +163,56 @@ class State:
 
         return response.json().get('data')
 
+class WebHandler:
+    state = State()
+
+    def namespace(self):
+        return {
+            'bonk': Endpoints.BonkRedeem,
+            'stop': Endpoints.Stop,
+            'app_access_token': Endpoints.AppAccessToken,
+            'exists': Endpoints.Existing,
+            'subscribe': Endpoints.Subscribe,
+            'unsubscribe': Endpoints.Unsubscribe,
+            'unsubscribe-all': Endpoints.UnsubscribeAll,
+        }
+
+    def urls(self):
+        return (
+            '/api/bonk', 'bonk',
+            '/local/stop', 'stop',
+            '/exists', 'exists',
+            '/', 'app_access_token',
+            '/unsubscribe-all', 'unsubscribe-all',
+        )
+
+    def __init__(self):
+        for name,endpoint in Endpoints.__dict__.items():
+            if '__' in name:
+                continue
+            endpoint.state = self.state
+        self.app = WebServer(mapping=self.urls(), fvars=self.namespace())
+        print(self.app.ctx.environ)
+
+    def _exit(self):
+        print('Shutting down server. Bye!!! Bye bye!!! Hope you had a good stream <3')
+        try:
+             self.state.unsubscribe()
+        except UnsubscribeError as e:
+             print(f'Failed to unsubscribe: {e}')
+        GLOBAL_CONFIGURATION.write()
+        print('thats all folks')
+
+    def run(self):
+        print('running stars server! for doing star things! waow!')
+        print('-'*50)
+        HTTPServer.ssl_adapter = BuiltinSSLAdapter(
+            certificate='certs/star.pem',
+            private_key='certs/star.priv'
+        )
+        atexit.register(WebHandler._exit, self)
+        self.app.run(port=443)
+
 class WebServer(web.application):
     def run(self, port=8080, *middleware):
         func = self.wsgifunc(*middleware)
@@ -200,20 +252,25 @@ def verify_twitch_webhook(request: Request, env: dict, body: str):
 def require_local(func):
     def wrapper(*args, **kwargs):
         try:
-            return func(*args, **kwags)
+            verify_local(web.ctx)
         except LocalHostAuthError as e:
             print(f'Non-local API called from abroad: {e}')
             return webapi.forbidden()
+        return func(*args, **kwargs)
     return wrapper
 
-def require_twitch(func):
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwags)
-        except AuthError as e:
-            print(f'Attempt to call a Twitch-only method from not-Twitch: {e}')
-            return webapi.forbidden()
-    return wrapper
+def require_twitch(request_member: str):
+    def verify_wrapper(func):
+        assert request_member in WebHandler.state.requests
+        def wrapper(*args, **kwargs):
+            try:
+                verify_twitch_webhook(WebHandler.state.requests.get(request), web.ctx.env, web.data())
+            except AuthError as e:
+                print(f'Attempt to call a Twitch-only method from not-Twitch: {e}')
+                return webapi.forbidden()
+            func(*args, **kwags)
+        return wrapper
+    return verify_wrapper
 
 class Endpoints:
     class BaseEndpoint:
@@ -341,51 +398,3 @@ class Endpoints:
                     print(e)
 
             return webapi.ok()
-
-class WebHandler:
-    def namespace(self):
-        return {
-            'bonk': Endpoints.BonkRedeem,
-            'stop': Endpoints.Stop,
-            'app_access_token': Endpoints.AppAccessToken,
-            'exists': Endpoints.Existing,
-            'subscribe': Endpoints.Subscribe,
-            'unsubscribe': Endpoints.Unsubscribe,
-            'unsubscribe-all': Endpoints.UnsubscribeAll,
-        }
-
-    def urls(self):
-        return (
-            '/api/bonk', 'bonk',
-            '/local/stop', 'stop',
-            '/exists', 'exists',
-            '/', 'app_access_token',
-            '/unsubscribe-all', 'unsubscribe-all',
-        )
-
-    def __init__(self):
-        self.state = State()
-        for name,endpoint in Endpoints.__dict__.items():
-            if '__' in name:
-                continue
-            endpoint.state = self.state
-        self.app = WebServer(mapping=self.urls(), fvars=self.namespace())
-
-    def _exit(self):
-        print('Shutting down server. Bye!!! Bye bye!!! Hope you had a good stream <3')
-        try:
-             self.state.unsubscribe()
-        except UnsubscribeError as e:
-             print(f'Failed to unsubscribe: {e}')
-        GLOBAL_CONFIGURATION.write()
-        print('thats all folks')
-
-    def run(self):
-        print('running stars server! for doing star things! waow!')
-        print('-'*50)
-        HTTPServer.ssl_adapter = BuiltinSSLAdapter(
-            certificate='certs/star.pem',
-            private_key='certs/star.priv'
-        )
-        atexit.register(WebHandler._exit, self)
-        self.app.run(port=443)
