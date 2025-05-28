@@ -75,7 +75,9 @@ class ChannelRewardCondition(Condition):
 
 class StreamStopCondition(Condition):
     def as_dict(self) -> dict:
-        return {}
+        return {
+            'broadcaster_user_id': self.broadcaster_user_id
+        }
 
 class Request:
     def __init__(

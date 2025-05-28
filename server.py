@@ -8,6 +8,7 @@ import hmac
 import hashlib
 import secrets
 import json
+import request
 import requests
 import nava
 
@@ -47,7 +48,7 @@ class State:
         self.hotkeys = KeyCommands()
         self.requests = {
             'stream_stop': StreamStop(
-                reward_redeem_path='api/stream_stop',
+                stream_stop_path='api/stream_stop'
             ),
             'bonk': ChannelRewardRedeem(
                 reward_id=GLOBAL_CONFIGURATION.get('bonk_id'),
@@ -59,29 +60,42 @@ class State:
             ),
         }
 
-    def _stop():
+    def _stop(self):
         print('shutting down...')
         self.unsubscribe()
+        self.unfuck_fly_agaric()
         signal.raise_signal(signal.SIGINT)
 
     def shutdown(self):
-        threading.Timer(1.0, State._stop).start()
+        threading.Timer(1.0, State._stop, args=[self]).start()
 
     def bonk(self):
         print('heads up knucklehead. bonk!!!!')
         self.hotkeys.bonk()
 
+    def unfuck_fly_agaric(self):
+        print('UNFUCK fly agaric **remakes you**')
+        try:
+            scene = GetScene('Main Scene')
+            fly_agaric = GetItem(scene.response['resourceId'], 'Fly agaric')
+            explosion = GetItem(scene.response['resourceId'], 'Explosion')
+            SetItemVisibility(fly_agaric.response['resourceId'], True)
+            SetItemVisibility(explosion.response['resourceId'], False)
+        except SlobsError as e:
+            print('Error trying to unexplode fly agaric: {e}')
+
     def fuck_fly_agaric(self):
         print('FUCK fly agaric **explodes you**')
         try:
             scene = GetScene('Main Scene')
-            folder = GetFolder('Fly agaric')
-            fly_agaric = GetItem(folder.response['id'], 'Fly agaric')
-            explosion = GetItem(folder.response['id'], 'Explosion')
-            SetItemVisibility(fly_agaric.response['id'], False)
-            SetItemVisibility(explosion.response['id'], True)
+            fly_agaric = GetItem(scene.response['resourceId'], 'Fly agaric')
+            explosion = GetItem(scene.response['resourceId'], 'Explosion')
+            SetItemVisibility(fly_agaric.response['resourceId'], False)
+            SetItemVisibility(explosion.response['resourceId'], True)
         except SlobsError as e:
             print('Error trying to explode fly agaric: {e}')
+        else:
+            nava.play('boom.wav')
 
     def subscribe(self):
         success = True
@@ -214,7 +228,7 @@ class WebHandler:
     def namespace(self):
         return {
             'bonk': Endpoints.BonkRedeem,
-            'fuck-fly-agaric': Endpoints.FuckFlyAgaricRedeem,
+            'fuck_fly_agaric': Endpoints.FuckFlyAgaricRedeem,
             'stop': Endpoints.Stop,
             'stream_stop': Endpoints.StreamStop,
             'app_access_token': Endpoints.AppAccessToken,
@@ -228,7 +242,7 @@ class WebHandler:
     def urls(self):
         return (
             '/api/bonk', 'bonk',
-            '/api/fuck-fly-agaric', 'fuck-fly-agaric',
+            '/api/fuck_fly_agaric', 'fuck_fly_agaric',
             '/api/stop', 'stop',
             '/api/stream_stop', 'stream_stop',
             '/exists', 'exists',
@@ -247,7 +261,7 @@ class WebHandler:
     def _exit(self):
         print('Shutting down server. Bye!!! Bye bye!!! Hope you had a good stream <3')
         try:
-             self.state.unsubscribe()
+             self.state._stop()
         except UnsubscribeError as e:
              print(f'Failed to unsubscribe: {e}')
         GLOBAL_CONFIGURATION.write()
@@ -309,17 +323,28 @@ def require_local(func):
         return func(*args, **kwargs)
     return wrapper
 
-def require_twitch(request_member: str):
+def require_twitch(method: str):
     def verify_wrapper(func):
-        assert request_member in WebHandler.state.requests
+        assert method in WebHandler.state.requests
         def wrapper(*args, **kwargs):
             try:
-                verify_twitch_webhook(WebHandler.state.requests.get(request), web.ctx.env, web.data())
+                verify_twitch_webhook(WebHandler.state.requests.get(method), web.ctx.env, web.data())
             except AuthError as e:
                 print(f'Attempt to call a Twitch-only method from not-Twitch: {e}')
                 return webapi.forbidden()
-            func(*args, **kwags)
+
+            if 'HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE' not in web.ctx.env:
+                return webapi.forbidden()
+
+            message_type = web.ctx.env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE')
+            if message_type == 'webhook_callback_verification':
+                print(f'initial challenge [{method}]')
+                payload = json.loads(web.data())
+                challenge = payload.get('challenge')
+                return challenge
+            return func(*args, **kwargs)
         return wrapper
+    return verify_wrapper
 
 class Endpoints:
     class BaseEndpoint:
@@ -342,6 +367,8 @@ class Endpoints:
             for sub in subscriptions:
                 html = html + f'<p>status={sub.get('status')}</p>'
                 html = html + f'<p>type={sub.get('type')}</p>'
+                html = html + f'<p>type={sub.get('condition')}</p>'
+                html = html + f'<p>type={sub.get('transport')}</p>'
                 html = html + f'<p>----</p>'
             return html
 
@@ -398,8 +425,10 @@ class Endpoints:
             return f'<h1>Homepage</h1>'
 
     class StreamStop(BaseEndpoint):
-        @require_twitch
+        @require_twitch('stream_stop')
         def POST(self):
+            print('stopping due to end of stream')
+
             self.state.shutdown()
             return webapi.ok()
 
@@ -410,32 +439,14 @@ class Endpoints:
             return webapi.ok()
 
     class BonkRedeem(BaseEndpoint):
-        @require_twitch
+        @require_twitch('bonk')
         def POST(self):
-            if 'HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE' not in web.ctx.env:
-                return webapi.forbidden()
-
-            message_type = web.ctx.env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE')
-            if message_type == 'webhook_callback_verification':
-                print('initial challenge [bonk]')
-                payload = json.loads(web.data())
-                challenge = payload.get('challenge')
-                return challenge
             self.state.bonk()
             return webapi.ok()
 
     class FuckFlyAgaricRedeem(BaseEndpoint):
-        @require_twitch
+        @require_twitch('fuck_fly_agaric')
         def POST(self):
-            if 'HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE' not in web.ctx.env:
-                return webapi.forbidden()
-
-            message_type = web.ctx.env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE')
-            if message_type == 'webhook_callback_verification':
-                print('initial challenge [fuck fly agaric]')
-                payload = json.loads(web.data())
-                challenge = payload.get('challenge')
-                return challenge
             self.state.fuck_fly_agaric()
             return webapi.ok()
 
