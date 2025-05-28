@@ -1,6 +1,4 @@
 from settings import GLOBAL_CONFIGURATION
-GLOBAL_CONFIGURATION.require('local_secret')
-GLOBAL_CONFIGURATION.require('bonk_id')
 
 import atexit
 import web
@@ -17,10 +15,11 @@ from pynput import keyboard
 from web import webapi
 from error import AuthError, LocalHostAuthError, AppAccessTokenError, UserAccessTokenError,\
         RefreshAppAccessTokenError, RefreshUserAccessTokenError, SubscribeError,\
-        UnsubscribeError, GetSubscriptionsError, AppAccessRefreshNeeded
-from request import Request, ChannelRewardRedeem
+        UnsubscribeError, GetSubscriptionsError, AppAccessRefreshNeeded, SlobsError
+from request import Request, ChannelRewardRedeem, StreamStop
 from cheroot.server import HTTPServer
 from cheroot.ssl.builtin import BuiltinSSLAdapter
+from streamlabs import GetScene, GetFolder, GetItem, SetItemVisibility
 
 class KeyCommands:
     def __init__(self):
@@ -41,13 +40,23 @@ class KeyCommands:
 
 class State:
     def __init__(self):
+        GLOBAL_CONFIGURATION.require('bonk_id')
+        GLOBAL_CONFIGURATION.require('fuck_fly_agaric_id')
+
         self.user_refresh_token = None
         self.hotkeys = KeyCommands()
         self.requests = {
+            'stream_stop': StreamStop(
+                reward_redeem_path='api/stream_stop',
+            ),
             'bonk': ChannelRewardRedeem(
                 reward_id=GLOBAL_CONFIGURATION.get('bonk_id'),
                 reward_redeem_path='api/bonk',
-            )
+            ),
+            'fuck_fly_agaric': ChannelRewardRedeem(
+                reward_id=GLOBAL_CONFIGURATION.get('fuck_fly_agaric_id'),
+                reward_redeem_path='api/fuck_fly_agaric',
+            ),
         }
 
     def _stop():
@@ -61,6 +70,18 @@ class State:
     def bonk(self):
         print('heads up knucklehead. bonk!!!!')
         self.hotkeys.bonk()
+
+    def fuck_fly_agaric(self):
+        print('FUCK fly agaric **explodes you**')
+        try:
+            scene = GetScene('Main Scene')
+            folder = GetFolder('Fly agaric')
+            fly_agaric = GetItem(folder.response['id'], 'Fly agaric')
+            explosion = GetItem(folder.response['id'], 'Explosion')
+            SetItemVisibility(fly_agaric.response['id'], False)
+            SetItemVisibility(explosion.response['id'], True)
+        except SlobsError as e:
+            print('Error trying to explode fly agaric: {e}')
 
     def subscribe(self):
         success = True
@@ -156,12 +177,36 @@ class State:
             raise GetSubscriptionsError()
         elif response.status_code == 401:
             if attempt == 3:
-                raise RefreshUserAccessTokenError()
+                raise RefreshAppAccessTokenError()
             token = self.get_app_access_token()
             GLOBAL_CONFIGURATION['app_access_token'] = token
             return self.get_all_subscriptions(attempt + 1)
 
         return response.json().get('data')
+
+    def get_all_rewards(self, attempt=0) -> list[dict]:
+        GLOBAL_CONFIGURATION.require('star_oauth')
+        headers = {
+            'Authorization': f'Bearer {GLOBAL_CONFIGURATION.get('star_oauth')}',
+            'Client-Id': f'{GLOBAL_CONFIGURATION.get('app_id')}'
+        }
+        response = requests.get(
+            'https://api.twitch.tv/helix/channel_points/custom_rewards',
+            headers=headers,
+            params={
+                'broadcaster_id': GLOBAL_CONFIGURATION.get('star_id')
+            }
+        )
+        if response.status_code == 400:
+            raise GetRewardsError()
+        elif response.status_code == 401:
+            if attempt == 3:
+                raise RefreshUserAccessTokenError()
+            token = self.get_user_access_token()
+            GLOBAL_CONFIGURATION['star_oauth'] = token
+            return self.get_all_rewards(attempt + 1)
+        response = response.json()
+        return response['data']
 
 class WebHandler:
     state = State()
@@ -169,9 +214,12 @@ class WebHandler:
     def namespace(self):
         return {
             'bonk': Endpoints.BonkRedeem,
+            'fuck-fly-agaric': Endpoints.FuckFlyAgaricRedeem,
             'stop': Endpoints.Stop,
+            'stream_stop': Endpoints.StreamStop,
             'app_access_token': Endpoints.AppAccessToken,
             'exists': Endpoints.Existing,
+            'rewards': Endpoints.Rewards,
             'subscribe': Endpoints.Subscribe,
             'unsubscribe': Endpoints.Unsubscribe,
             'unsubscribe-all': Endpoints.UnsubscribeAll,
@@ -180,8 +228,11 @@ class WebHandler:
     def urls(self):
         return (
             '/api/bonk', 'bonk',
-            '/local/stop', 'stop',
+            '/api/fuck-fly-agaric', 'fuck-fly-agaric',
+            '/api/stop', 'stop',
+            '/api/stream_stop', 'stream_stop',
             '/exists', 'exists',
+            '/rewards', 'rewards',
             '/', 'app_access_token',
             '/unsubscribe-all', 'unsubscribe-all',
         )
@@ -192,7 +243,6 @@ class WebHandler:
                 continue
             endpoint.state = self.state
         self.app = WebServer(mapping=self.urls(), fvars=self.namespace())
-        print(self.app.ctx.environ)
 
     def _exit(self):
         print('Shutting down server. Bye!!! Bye bye!!! Hope you had a good stream <3')
@@ -270,13 +320,13 @@ def require_twitch(request_member: str):
                 return webapi.forbidden()
             func(*args, **kwags)
         return wrapper
-    return verify_wrapper
 
 class Endpoints:
     class BaseEndpoint:
         state: State
 
     class Existing(BaseEndpoint):
+        @require_local
         def GET(self):
             try:
                 subscriptions = self.state.get_all_subscriptions()
@@ -292,6 +342,21 @@ class Endpoints:
             for sub in subscriptions:
                 html = html + f'<p>status={sub.get('status')}</p>'
                 html = html + f'<p>type={sub.get('type')}</p>'
+                html = html + f'<p>----</p>'
+            return html
+
+    class Rewards(BaseEndpoint):
+        @require_local
+        def GET(self):
+            try:
+                rewards = self.state.get_all_rewards()
+            except RefreshUserAccessTokenError:
+                return '<h1>User authentication is not valid</h1>'
+
+            html = '<h1>Rewards</h1>'
+            for reward in rewards:
+                html = html + f'<p>title={reward.get('title')}</p>'
+                html = html + f'<p>id={reward.get('id')}</p>'
                 html = html + f'<p>----</p>'
             return html
 
@@ -332,10 +397,16 @@ class Endpoints:
 
             return f'<h1>Homepage</h1>'
 
+    class StreamStop(BaseEndpoint):
+        @require_twitch
+        def POST(self):
+            self.state.shutdown()
+            return webapi.ok()
+
     class Stop(BaseEndpoint):
         @require_local
         def POST(self):
-            self.state.shutdown(secret=data.secret)
+            self.state.shutdown()
             return webapi.ok()
 
     class BonkRedeem(BaseEndpoint):
@@ -351,6 +422,21 @@ class Endpoints:
                 challenge = payload.get('challenge')
                 return challenge
             self.state.bonk()
+            return webapi.ok()
+
+    class FuckFlyAgaricRedeem(BaseEndpoint):
+        @require_twitch
+        def POST(self):
+            if 'HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE' not in web.ctx.env:
+                return webapi.forbidden()
+
+            message_type = web.ctx.env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE')
+            if message_type == 'webhook_callback_verification':
+                print('initial challenge [fuck fly agaric]')
+                payload = json.loads(web.data())
+                challenge = payload.get('challenge')
+                return challenge
+            self.state.fuck_fly_agaric()
             return webapi.ok()
 
     class Subscribe(BaseEndpoint):

@@ -58,3 +58,22 @@ class GetSubscriptionsError(Exception):
     def __init__(self):
         super().__init__(f'Failed to get subscriptions')
 
+class GetRewardsError(Exception):
+    def __init__(self):
+        super().__init__(f'Failed to get rewards')
+
+class SlobsError(Exception):
+    def __init__(self, reason: str):
+        super().__init__(f'Failed to communicate with pipe. Reason: {reason}')
+
+class SlobsPipeBroken(SlobsError):
+    def __init__(self):
+        super().__init__('pipe broken')
+
+class SlobsNoPipePresent(SlobsError):
+    def __init__(self):
+        super().__init__('no pipe found')
+
+class SlobsNoResponse(SlobsError):
+    def __init__(self):
+        super().__init__('no response from pipe')

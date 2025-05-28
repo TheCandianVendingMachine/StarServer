@@ -33,6 +33,7 @@ def unsubscribe(id: str):
 
 class Subscription(StrEnum):
     CHANNEL_REWARD_REDEEM = 'channel.channel_points_custom_reward_redemption.add'
+    STREAM_OFFLINE = 'stream.offline'
 
 class Transport:
     def as_dict(self) -> dict:
@@ -71,6 +72,10 @@ class ChannelRewardCondition(Condition):
             'broadcaster_user_id': self.broadcaster_user_id,
             'reward_id': self.reward_id
         }
+
+class StreamStopCondition(Condition):
+    def as_dict(self) -> dict:
+        return {}
 
 class Request:
     def __init__(
@@ -126,4 +131,13 @@ class ChannelRewardRedeem(Request):
             version='1',
             condition=ChannelRewardCondition(reward_id),
             transport=Webhook(path=reward_redeem_path)
+        )
+
+class StreamStop(Request):
+    def __init__(self, stream_stop_path: str):
+        super().__init__(
+            subscription=Subscription.STREAM_OFFLINE,
+            version='1',
+            condition=StreamStopCondition(),
+            transport=Webhook(path=stream_stop_path)
         )
