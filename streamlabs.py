@@ -1,4 +1,6 @@
-from error import SlobsError, SlobsPipeBroken, SlobsNoPipePresent, SlobsNoResponse
+from error import SlobsError, SlobsPipeBroken, SlobsNoPipePresent, SlobsNoResponse,\
+        JsonRpcInternalError, JsonRpcInvalidParams, JsonRpcInvalidRequest,\
+        JsonRpcMethodNotFound, JsonRpcParseError, JsonRpcServerError, JsonRpcError
 import uuid
 import win32pipe
 import win32file
@@ -41,7 +43,24 @@ class Control:
                 result, response = win32file.ReadFile(pipe, 128 * 1024)
                 self.response = json.loads(response.decode('utf-8'))
                 if self.response['id'] == id:
-                    self.response = self.response['result']
+                    if 'error' in self.response:
+                        error_no = int(self.response['error'])
+                        if error_no == -32700:
+                            raise JsonRpcParseError()
+                        elif error_no == -32600:
+                            raise JsonRpcInvalidRequest()
+                        elif error_no == -32601:
+                            raise JsonRpcMethodNotFound(self.method())
+                        elif error_no == -32602:
+                            raise JsonRpcInvalidParams()
+                        elif error_no == -32603:
+                            raise JsonRpcInternalError()
+                        elif error_no <= -32000 and error_no >= -32099:
+                            raise JsonRpcServerError()
+                        else:
+                            JsonRpcError(f'error code {error_no}')
+                    else:
+                        self.response = self.response['result']
                     return
             raise SlobsNoResponse()
         except pywintypes.error as e:
