@@ -93,3 +93,31 @@ class PipeNotFound(PipeError):
 class PipeBroken(PipeError):
     def __init__(self):
         super().__init__('pipe broken')
+
+class JsonRpcError(Exception):
+    def __init__(self, message: str):
+        super().__init__(f'An RPC error occured: {message}')
+
+class JsonRpcParseError(JsonRpcError):
+    def __init__(self):
+        super().__init__('Invalid JSON recieved by the server')
+
+class JsonRpcInvalidRequest(JsonRpcError):
+    def __init__(self):
+        super().__init__('Request object not valid')
+
+class JsonRpcMethodNotFound(JsonRpcError):
+    def __init__(self, method: str):
+        super().__init__(f'Trying to call method which does not exist: "{method}"')
+
+class JsonRpcInvalidParams(JsonRpcError):
+    def __init__(self):
+        super().__init__(f'Invalid parameters passed to method')
+
+class JsonRpcInternalError(JsonRpcError):
+    def __init__(self):
+        super().__init__(f'Internal RPC error')
+
+class JsonRpcServerError(JsonRpcError):
+    def __init__(self):
+        super().__init__(f'Server Error')

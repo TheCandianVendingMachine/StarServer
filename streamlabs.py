@@ -1,4 +1,6 @@
-from error import SlobsError, SlobsPipeBroken, SlobsNoPipePresent, SlobsNoResponse
+from error import SlobsError, SlobsPipeBroken, SlobsNoPipePresent, SlobsNoResponse,\
+        JsonRpcError, JsonRpcParseError, JsonRpcServerError, JsonRpcInvalidParams,\
+        JsonRpcInternalError, JsonRpcInvalidRequest, JsonRpcMethodNotFound
 from rpc import WindowsPipe
 import uuid
 import json
@@ -22,6 +24,22 @@ class Control:
             response = pipe.listen()
             self.response = json.loads(response.decode('utf-8'))
             if self.response['id'] == id:
+                if 'error' in self.response:
+                    error_no = int(self.response['error'])
+                    if error_no == -32700:
+                        raise JsonRpcParseError()
+                    elif error_no == -32600:
+                        raise JsonRpcInvalidRequest()
+                    elif error_no == -32601:
+                        raise JsonRpcMethodNotFound(self.method())
+                    elif error_no == -32602:
+                        raise JsonRpcInvalidParams()
+                    elif error_no == -32603:
+                        raise JsonRpcInternalError()
+                    elif error_no <= -32000 and error_no >= -32099:
+                        raise JsonRpcServerError()
+                    else:
+                        JsonRpcError(f'error code {error_no}')
                 self.response = self.response['result']
                 return
         raise SlobsNoResponse()
