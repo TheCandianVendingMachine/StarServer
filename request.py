@@ -2,7 +2,7 @@ from urllib.parse import urljoin
 from enum import StrEnum
 from settings import GLOBAL_CONFIGURATION
 from base64 import b64encode
-from error import SubscribeError, UnsubscribeError, NotSubscribedError, AppAccessRefreshNeeded
+from error import SubscribeError, UnsubscribeError, NotSubscribedError, AppAccessRefreshNeeded, DuplicateSubscription
 import os
 import json
 import requests

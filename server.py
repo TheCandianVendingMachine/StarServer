@@ -64,13 +64,14 @@ class Subscription:
         if self.subscribed:
             return
         if self.attempt == 3:
-            logging.critical('Did not successfully subscribe')
+            logger.critical('Did not successfully subscribe')
             return
         self.attempt = self.attempt + 1
-        logging.warn(f'Subscription did not complete in time [{self.attempt}/3]')
+        logger.warn(f'Subscription did not complete in time [{self.attempt}/3]')
         try:
             self.subscribe()
-        except SubscriptionError as e:
+        except SubscribeError as e:
+            logging.critical(f'Could not subscribe: {e}')
             self.error = e
 
 class State:
@@ -152,8 +153,8 @@ class State:
                 logger.info(f'Subscribing "{topic}"')
                 subscription.subscribe()
             except DuplicateSubscription as e:
-                logger.warn(f'Duplicate subscription: {e}')
-                payload = requests.post('https://localhost:443/api/unsubscribe-all')
+                logger.warn(f'Duplicate subscription: {e}; attempting to unsubscribe')
+                payload = requests.post('https://localhost/api/unsubscribe-all')
                 if payload.response != 200:
                     raise SubscribeError(payload.response)
                 self.subscribe(attempt + 1)
@@ -324,10 +325,15 @@ class WebHandler:
 
     def run(self):
         if ENVIRONMENT.use_ssl():
+            print('using ssl')
+            logger.info('using ssl...')
             HTTPServer.ssl_adapter = BuiltinSSLAdapter(
                 certificate='certs/star.pem',
                 private_key='certs/star.priv'
             )
+        else:
+            print('ignoring ssl [LOCAL ONLY]')
+            logger.info('ignoring ssl [LOCAL ONLY]')
         atexit.register(WebHandler._exit, self)
         self.app.run(port=ENVIRONMENT.port())
 
