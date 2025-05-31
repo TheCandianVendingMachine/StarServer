@@ -143,6 +143,13 @@ class State:
         else:
             nava.play('boom.wav')
 
+    def _resubscribe(self, attempt):
+        payload = requests.post('https://localhost/api/unsubscribe-all', verify=False)
+        if payload.status_code != 200:
+            raise SubscribeError(payload.response)
+        logger.info('Successfully unsubscribed!')
+        self.subscribe(attempt + 1)
+
     def subscribe(self, attempt=0):
         if attempt == 3:
             # will show '3' when erroring here
@@ -154,10 +161,7 @@ class State:
                 subscription.subscribe()
             except DuplicateSubscription as e:
                 logger.warn(f'Duplicate subscription: {e}; attempting to unsubscribe')
-                payload = requests.post('https://localhost/api/unsubscribe-all')
-                if payload.response != 200:
-                    raise SubscribeError(payload.response)
-                self.subscribe(attempt + 1)
+                threading.Timer(0.3, State._resubscribe, args=[self, attempt]).start()
                 return
             except SubscribeError as e:
                 logger.warn(f'Failed to subscribe: {e}')
@@ -528,6 +532,7 @@ class Endpoints:
     class UnsubscribeAll(BaseEndpoint):
         @require_local
         def POST(self):
+            logger.info(f'POST unsubscribing all')
             try:
                 subscriptions = self.state.get_all_subscriptions()
             except RefreshUserAccessTokenError:
