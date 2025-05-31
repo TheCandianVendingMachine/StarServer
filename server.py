@@ -273,8 +273,6 @@ class WebHandler:
         logger.info('thats all folks')
 
     def run(self):
-        logger.info('running stars server! for doing star things! waow!')
-        logger.info('-'*50)
         if ENVIRONMENT.use_ssl():
             HTTPServer.ssl_adapter = BuiltinSSLAdapter(
                 certificate='certs/star.pem',
@@ -286,6 +284,8 @@ class WebHandler:
 class WebServer(web.application):
     def run(self, port=8080, *middleware):
         func = self.wsgifunc(Logger)
+        logger.info('running stars server! for doing star things! waow!')
+        logger.info('-'*50)
         return web.httpserver.runsimple(func, ('0.0.0.0', port))
 
 def verify_local(ctx: dict):
