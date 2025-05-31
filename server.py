@@ -97,6 +97,11 @@ class State:
             explosion = GetItem(scene.response['resourceId'], 'Explosion')
             SetItemVisibility(fly_agaric.response['resourceId'], False)
             SetItemVisibility(explosion.response['resourceId'], True)
+            threading.Timer(
+                5.0,
+                lambda explosion: SetItemVisibility(explosion, False),
+                args=[explosion.response['resourceId']]
+            ).start()
         except SlobsError as e:
             logger.error('Error trying to explode fly agaric: {e}')
         else:
