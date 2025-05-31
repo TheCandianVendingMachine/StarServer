@@ -182,3 +182,4 @@ cython_debug/
 
 conf.txt*
 run.ps1
+*.log*

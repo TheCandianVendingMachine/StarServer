@@ -1,57 +1,30 @@
 from error import SlobsError, SlobsPipeBroken, SlobsNoPipePresent, SlobsNoResponse
+from rpc import WindowsPipe
 import uuid
-import win32pipe
-import win32file
-import win32api
-import pywintypes
 import json
 
 class Control:
     def __init__(self):
         self.response = {}
-        try:
-            pipe = win32file.CreateFile(
-                r'\\.\pipe\slobs',
-                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
-                0,
-                None,
-                win32file.OPEN_EXISTING,
-                0,
-                None
-            )
-            res = win32pipe.SetNamedPipeHandleState(
-                pipe,
-                win32pipe.PIPE_READMODE_BYTE,
-                None,
-                None
-            )
-            if res == 0:
-                reason = win32api.GetLastError()
-                raise SlobsError(reason)
+        pipe = WindowsPipe()
+        pipe.connect('slobs')
 
-            id = str(uuid.uuid4())
-            message = json.dumps({
-                'jsonrpc': '2.0',
-                'id': id,
-                'method': self.method(),
-                'params': self.parameters()
-            }).encode()
-            win32file.WriteFile(pipe, message)
-            for i in range(0, 16):
-                result, response = win32file.ReadFile(pipe, 128 * 1024)
-                self.response = json.loads(response.decode('utf-8'))
-                if self.response['id'] == id:
-                    self.response = self.response['result']
-                    return
-            raise SlobsNoResponse()
-        except pywintypes.error as e:
-            if e.args[0] == 2:
-                raise SlobsNoPipePresent()
-            elif e.args[0] == 209:
-                raise SlobsPipeBroken()
-            raise SlobsError(f'unhandled error: {e}')
-        finally:
-            pipe.close()
+        id = str(uuid.uuid4())
+        message = json.dumps({
+            'jsonrpc': '2.0',
+            'id': id,
+            'method': self.method(),
+            'params': self.parameters()
+        }).encode()
+
+        pipe.talk(message)
+        for i in range(0, 16):
+            response = pipe.listen()
+            self.response = json.loads(response.decode('utf-8'))
+            if self.response['id'] == id:
+                self.response = self.response['result']
+                return
+        raise SlobsNoResponse()
 
     def method(self) -> str:
         raise NotImplementedError()

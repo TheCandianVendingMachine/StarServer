@@ -77,3 +77,15 @@ class SlobsNoPipePresent(SlobsError):
 class SlobsNoResponse(SlobsError):
     def __init__(self):
         super().__init__('no response from pipe')
+
+class PipeError(Exception):
+    def __init__(self, message: str):
+        super().__init__(f'An error with the pipe occured: {message}')
+
+class PipeNotFound(PipeError):
+    def __init__(self):
+        super().__init__('no pipe found')
+
+class PipeBroken(PipeError):
+    def __init__(self):
+        super().__init__('pipe broken')

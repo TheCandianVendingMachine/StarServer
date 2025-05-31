@@ -11,6 +11,7 @@ import json
 import request
 import requests
 import nava
+import logging
 
 from pynput import keyboard
 from web import webapi
@@ -21,6 +22,10 @@ from request import Request, ChannelRewardRedeem, StreamStop
 from cheroot.server import HTTPServer
 from cheroot.ssl.builtin import BuiltinSSLAdapter
 from streamlabs import GetScene, GetFolder, GetItem, SetItemVisibility
+from environment import ENVIRONMENT
+from log import Logger
+
+logger = logging.getLogger('wsgilog.log')
 
 class KeyCommands:
     def __init__(self):
@@ -61,7 +66,7 @@ class State:
         }
 
     def _stop(self):
-        print('shutting down...')
+        logger.info('shutting down...')
         self.unsubscribe()
         self.unfuck_fly_agaric()
         signal.raise_signal(signal.SIGINT)
@@ -70,11 +75,11 @@ class State:
         threading.Timer(1.0, State._stop, args=[self]).start()
 
     def bonk(self):
-        print('heads up knucklehead. bonk!!!!')
+        logger.info('heads up knucklehead. bonk!!!!')
         self.hotkeys.bonk()
 
     def unfuck_fly_agaric(self):
-        print('UNFUCK fly agaric **remakes you**')
+        logger.info('UNFUCK fly agaric **remakes you**')
         try:
             scene = GetScene('Main Scene')
             fly_agaric = GetItem(scene.response['resourceId'], 'Fly agaric')
@@ -82,10 +87,10 @@ class State:
             SetItemVisibility(fly_agaric.response['resourceId'], True)
             SetItemVisibility(explosion.response['resourceId'], False)
         except SlobsError as e:
-            print('Error trying to unexplode fly agaric: {e}')
+            logger.error('Error trying to unexplode fly agaric: {e}')
 
     def fuck_fly_agaric(self):
-        print('FUCK fly agaric **explodes you**')
+        logger.info('FUCK fly agaric **explodes you**')
         try:
             scene = GetScene('Main Scene')
             fly_agaric = GetItem(scene.response['resourceId'], 'Fly agaric')
@@ -93,7 +98,7 @@ class State:
             SetItemVisibility(fly_agaric.response['resourceId'], False)
             SetItemVisibility(explosion.response['resourceId'], True)
         except SlobsError as e:
-            print('Error trying to explode fly agaric: {e}')
+            logger.error('Error trying to explode fly agaric: {e}')
         else:
             nava.play('boom.wav')
 
@@ -101,10 +106,10 @@ class State:
         success = True
         for topic,subscription in self.requests.items():
             try:
-                print(f'Subscribing "{topic}"')
+                logger.info(f'Subscribing "{topic}"')
                 subscription.subscribe()
             except SubscribeError as e:
-                print(f'Failed to subscribe: {e}')
+                logger.warn(f'Failed to subscribe: {e}')
         if not success:
             raise SubscribeError(418)
 
@@ -112,11 +117,11 @@ class State:
         success = True
         for topic,subscription in self.requests.items():
             try:
-                print(f'Unsubscribing "{topic}"')
+                logger.info(f'Unsubscribing "{topic}"')
                 subscription.unsubscribe()
             except UnsubscribeError as e:
                 success = False
-                print(f'Failed to unsubscribe: {e}')
+                logger.warn(f'Failed to unsubscribe: {e}')
         if not success:
             raise UnsubscribeError('some subscriptions could not be done')
 
@@ -139,7 +144,7 @@ class State:
         try:
             return self.refresh_user_access_token()
         except RefreshUserAccessTokenError:
-            print('Could not refresh user access token, generating new one')
+            logger.warn('Could not refresh user access token, generating new one')
         response = requests.post(
             'https://id.twitch.tv/oauth2/token',
             data={
@@ -259,27 +264,28 @@ class WebHandler:
         self.app = WebServer(mapping=self.urls(), fvars=self.namespace())
 
     def _exit(self):
-        print('Shutting down server. Bye!!! Bye bye!!! Hope you had a good stream <3')
+        logger.info('Shutting down server. Bye!!! Bye bye!!! Hope you had a good stream <3')
         try:
              self.state._stop()
         except UnsubscribeError as e:
-             print(f'Failed to unsubscribe: {e}')
+             logger.warn(f'Failed to unsubscribe: {e}')
         GLOBAL_CONFIGURATION.write()
-        print('thats all folks')
+        logger.info('thats all folks')
 
     def run(self):
-        print('running stars server! for doing star things! waow!')
-        print('-'*50)
-        HTTPServer.ssl_adapter = BuiltinSSLAdapter(
-            certificate='certs/star.pem',
-            private_key='certs/star.priv'
-        )
+        logger.info('running stars server! for doing star things! waow!')
+        logger.info('-'*50)
+        if ENVIRONMENT.use_ssl():
+            HTTPServer.ssl_adapter = BuiltinSSLAdapter(
+                certificate='certs/star.pem',
+                private_key='certs/star.priv'
+            )
         atexit.register(WebHandler._exit, self)
-        self.app.run(port=443)
+        self.app.run(port=ENVIRONMENT.port())
 
 class WebServer(web.application):
     def run(self, port=8080, *middleware):
-        func = self.wsgifunc(*middleware)
+        func = self.wsgifunc(Logger)
         return web.httpserver.runsimple(func, ('0.0.0.0', port))
 
 def verify_local(ctx: dict):
@@ -318,7 +324,7 @@ def require_local(func):
         try:
             verify_local(web.ctx)
         except LocalHostAuthError as e:
-            print(f'Non-local API called from abroad: {e}')
+            logger.warn(f'Non-local API called from abroad: {e}')
             return webapi.forbidden()
         return func(*args, **kwargs)
     return wrapper
@@ -330,7 +336,7 @@ def require_twitch(method: str):
             try:
                 verify_twitch_webhook(WebHandler.state.requests.get(method), web.ctx.env, web.data())
             except AuthError as e:
-                print(f'Attempt to call a Twitch-only method from not-Twitch: {e}')
+                logger.warn(f'Attempt to call a Twitch-only method from not-Twitch: {e}')
                 return webapi.forbidden()
 
             if 'HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE' not in web.ctx.env:
@@ -338,7 +344,7 @@ def require_twitch(method: str):
 
             message_type = web.ctx.env.get('HTTP_TWITCH_EVENTSUB_MESSAGE_TYPE')
             if message_type == 'webhook_callback_verification':
-                print(f'initial challenge [{method}]')
+                logger.info(f'initial challenge [{method}]')
                 payload = json.loads(web.data())
                 challenge = payload.get('challenge')
                 return challenge
@@ -394,7 +400,7 @@ class Endpoints:
             except AppAccessTokenError as e:
                 return f'<h1>Failed to generate app access token</h1>'
             GLOBAL_CONFIGURATION.write()
-            print('Generated and updated app access token to configuration')
+            logger.info('Generated and updated app access token to configuration')
 
             access_code = params['code']
             try:
@@ -402,7 +408,7 @@ class Endpoints:
             except UserAccessTokenError as e:
                 return f'<h1>Failed to generate user access token</h1>'
             GLOBAL_CONFIGURATION.write()
-            print('Generated and updated user access token to configuration')
+            logger.info('Generated and updated user access token to configuration')
 
             try:
                 self.state.subscribe()
@@ -427,7 +433,7 @@ class Endpoints:
     class StreamStop(BaseEndpoint):
         @require_twitch('stream_stop')
         def POST(self):
-            print('stopping due to end of stream')
+            logger.info('stopping due to end of stream')
 
             self.state.shutdown()
             return webapi.ok()
@@ -475,16 +481,16 @@ class Endpoints:
                     raise RefreshAppAccessTokenError()
 
                 try:
-                    print(f'unsubscribing from {sub.get('id')}')
+                    logger.info(f'unsubscribing from {sub.get('id')}')
                     request.unsubscribe(sub.get('id'))
                 except UnsubscribeError as e:
-                    print(f'failed to unsubscribe: {e}')
+                    logger.warn(f'failed to unsubscribe: {e}')
                 except AppAccessRefreshNeeded:
-                    print(f'refreshing app access token ({attempt + 1}/3)')
+                    logger.warn(f'refreshing app access token ({attempt + 1}/3)')
                     try:
                         GLOBAL_CONFIGURATION['app_access_token'] = self.state.get_app_access_token(access_code)
                     except AppAccessTokenError as e:
-                        print('failed to refresh: {e}')
+                        logger.error('failed to refresh: {e}')
 
                     unsub(id, attempt + 1)
 
@@ -492,6 +498,6 @@ class Endpoints:
                 try:
                     unsub(sub)
                 except RefreshAppAccessTokenError as e:
-                    print(e)
+                    logger.error(e)
 
             return webapi.ok()
