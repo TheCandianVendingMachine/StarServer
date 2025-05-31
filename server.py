@@ -17,7 +17,8 @@ from pynput import keyboard
 from web import webapi
 from error import AuthError, LocalHostAuthError, AppAccessTokenError, UserAccessTokenError,\
         RefreshAppAccessTokenError, RefreshUserAccessTokenError, SubscribeError,\
-        UnsubscribeError, GetSubscriptionsError, AppAccessRefreshNeeded, SlobsError
+        UnsubscribeError, GetSubscriptionsError, AppAccessRefreshNeeded, SlobsError,\
+        DuplicateSubscription
 from request import Request, ChannelRewardRedeem, StreamStop
 from cheroot.server import HTTPServer
 from cheroot.ssl.builtin import BuiltinSSLAdapter
@@ -44,6 +45,34 @@ class KeyCommands:
         self._play([keyboard.Key.shift, 'n'])
         nava.play('bonk.wav')
 
+class Subscription:
+    def __init__(self, request):
+        self.request = request
+        self.subscribed = False
+        self.error = None
+        self.attempt = 0
+
+    def subscribe(self):
+        self.request.subscribe()
+        self.thread = threading.Timer(
+            5.0,
+            Subscription._timeout,
+            args=[self]
+        ).start()
+
+    def _timeout(self):
+        if self.subscribed:
+            return
+        if self.attempt == 3:
+            logging.critical('Did not successfully subscribe')
+            return
+        self.attempt = self.attempt + 1
+        logging.warn(f'Subscription did not complete in time [{self.attempt}/3]')
+        try:
+            self.subscribe()
+        except SubscriptionError as e:
+            self.error = e
+
 class State:
     def __init__(self):
         GLOBAL_CONFIGURATION.require('bonk_id')
@@ -65,11 +94,17 @@ class State:
             ),
         }
 
+        self.subscriptions = { key: Subscription(self.requests[key]) for key in self.requests.keys() }
+
     def _stop(self):
         logger.info('shutting down...')
         self.unsubscribe()
         self.unfuck_fly_agaric()
-        signal.raise_signal(signal.SIGINT)
+        threading.Timer(
+            3.0,
+            signal.raise_signal,
+            args=[signal.SIGINT]
+        ).start()
 
     def shutdown(self):
         threading.Timer(1.0, State._stop, args=[self]).start()
@@ -107,12 +142,22 @@ class State:
         else:
             nava.play('boom.wav')
 
-    def subscribe(self):
+    def subscribe(self, attempt=0):
+        if attempt == 3:
+            # will show '3' when erroring here
+            raise SubscribeError(attempt)
         success = True
-        for topic,subscription in self.requests.items():
+        for topic,subscription in self.subscriptions.items():
             try:
                 logger.info(f'Subscribing "{topic}"')
                 subscription.subscribe()
+            except DuplicateSubscription as e:
+                logger.warn(f'Duplicate subscription: {e}')
+                payload = requests.post('https://localhost:443/api/unsubscribe-all')
+                if payload.response != 200:
+                    raise SubscribeError(payload.response)
+                self.subscribe(attempt + 1)
+                return
             except SubscribeError as e:
                 logger.warn(f'Failed to subscribe: {e}')
         if not success:
@@ -258,7 +303,7 @@ class WebHandler:
             '/exists', 'exists',
             '/rewards', 'rewards',
             '/', 'app_access_token',
-            '/unsubscribe-all', 'unsubscribe-all',
+            '/api/unsubscribe-all', 'unsubscribe-all',
         )
 
     def __init__(self):
@@ -352,6 +397,7 @@ def require_twitch(method: str):
                 logger.info(f'initial challenge [{method}]')
                 payload = json.loads(web.data())
                 challenge = payload.get('challenge')
+                WebHandler.state.subscriptions[method].subscribed = True
                 return challenge
             return func(*args, **kwargs)
         return wrapper
@@ -371,7 +417,7 @@ class Endpoints:
 
             html = '<h1>Subscriptions</h1>'
             html = html + '\
-<form action=/unsubscribe-all method=POST>\
+<form action=/api/unsubscribe-all method=POST>\
 <button>Unsubscribe from all</button>\
 </form>\
 '

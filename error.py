@@ -26,6 +26,10 @@ class SubscribeError(Exception):
     def __init__(self, status: int):
         super().__init__(f'Failed to subscribe to an event: status {status}')
 
+class DuplicateSubscription(SubscribeError):
+    def __init__(self, status: int):
+        super().__init__(status)
+
 class UnsubscribeError(Exception):
     def __init__(self, reason: str):
         super().__init__(f'Failed to unsubscribe from an event: {reason}')

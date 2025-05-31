@@ -34,6 +34,7 @@ def unsubscribe(id: str):
 class Subscription(StrEnum):
     CHANNEL_REWARD_REDEEM = 'channel.channel_points_custom_reward_redemption.add'
     STREAM_OFFLINE = 'stream.offline'
+    STREAM_RAID = 'stream.raid'
 
 class Transport:
     def as_dict(self) -> dict:
@@ -79,6 +80,12 @@ class StreamStopCondition(Condition):
             'broadcaster_user_id': self.broadcaster_user_id
         }
 
+class StreamRaidCondition(Condition):
+    def as_dict(self) -> dict:
+        return {
+            'to_broadcaster_user_id': self.broadcaster_user_id
+        }
+
 class Request:
     def __init__(
         self,
@@ -105,7 +112,9 @@ class Request:
             headers=headers,
             data=body
         )
-        if response.status_code >= 300:
+        if response.status_code == 409:
+            raise DuplicateSubscription(response.status_code)
+        elif response.status_code >= 300:
             raise SubscribeError(response.status_code)
 
         payload = json.loads(response.content)
@@ -141,5 +150,14 @@ class StreamStop(Request):
             subscription=Subscription.STREAM_OFFLINE,
             version='1',
             condition=StreamStopCondition(),
+            transport=Webhook(path=stream_stop_path)
+        )
+
+class StreamRaid(Request):
+    def __init__(self, raid_path: str):
+        super().__init__(
+            subscription=Subscription.STREAM_RAID,
+            version='1',
+            condition=StreamRaidCondition(),
             transport=Webhook(path=stream_stop_path)
         )
