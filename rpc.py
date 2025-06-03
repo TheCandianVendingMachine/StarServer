@@ -1,5 +1,5 @@
 from error import PipeError, PipeNotFound, PipeBroken
-import importlib
+import importlib.util
 
 class Pipe:
     def connect(self, pipe):
@@ -47,7 +47,7 @@ if importlib.util.find_spec('win32pipe') is not None:
                     None
                 )
                 res = win32pipe.SetNamedPipeHandleState(
-                    pipe,
+                    self.pipe,
                     win32pipe.PIPE_READMODE_BYTE,
                     None,
                     None
@@ -69,40 +69,40 @@ if importlib.util.find_spec('win32pipe') is not None:
                 self.pipe = None
                 raise e
 
-    def talk(self, message):
-        try:
-            win32file.WriteFile(self.pipe, message)
-        except pywintypes.error as e:
-            self.pipe.close()
-            self.pipe = None
+        def talk(self, message):
+            try:
+                win32file.WriteFile(self.pipe, message)
+            except pywintypes.error as e:
+                self.pipe.close()
+                self.pipe = None
 
-            if e.args[0] == 2:
-                raise PipeNotFound()
-            elif e.args[0] == 209:
-                raise PipeBroken()
-            raise PipeError(f'unhandled error: {e}')
-        except PipeError as e:
-            self.pipe.close()
-            self.pipe = None
-            raise e
+                if e.args[0] == 2:
+                    raise PipeNotFound()
+                elif e.args[0] == 209:
+                    raise PipeBroken()
+                raise PipeError(f'unhandled error: {e}')
+            except PipeError as e:
+                self.pipe.close()
+                self.pipe = None
+                raise e
 
-    def listen(self):
-        try:
-            result, response = win32file.ReadFile(self.pipe, 128 * 1024)
-            return response
-        except pywintypes.error as e:
-            self.pipe.close()
-            self.pipe = None
+        def listen(self):
+            try:
+                result, response = win32file.ReadFile(self.pipe, 128 * 1024)
+                return response
+            except pywintypes.error as e:
+                self.pipe.close()
+                self.pipe = None
 
-            if e.args[0] == 2:
-                raise PipeNotFound()
-            elif e.args[0] == 209:
-                raise PipeBroken()
-            raise PipeError(f'unhandled error: {e}')
-        except PipeError as e:
-            self.pipe.close()
-            self.pipe = None
-            raise e
+                if e.args[0] == 2:
+                    raise PipeNotFound()
+                elif e.args[0] == 209:
+                    raise PipeBroken()
+                raise PipeError(f'unhandled error: {e}')
+            except PipeError as e:
+                self.pipe.close()
+                self.pipe = None
+                raise e
 else:
     class WindowsPipe(EmptyPipe):
         pass

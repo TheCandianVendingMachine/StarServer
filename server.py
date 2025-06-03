@@ -43,7 +43,7 @@ class KeyCommands:
 
     def bonk(self):
         self._play([keyboard.Key.shift, 'n'])
-        nava.play('bonk.wav')
+        nava.play('bonk.wav', async_mode=True)
 
 class Subscription:
     def __init__(self, request):
@@ -141,7 +141,7 @@ class State:
         except SlobsError as e:
             logger.error('Error trying to explode fly agaric: {e}')
         else:
-            nava.play('boom.wav')
+            nava.play('boom.wav', async_mode=True)
 
     def _resubscribe(self, attempt):
         payload = requests.post('https://localhost/api/unsubscribe-all', verify=False)
