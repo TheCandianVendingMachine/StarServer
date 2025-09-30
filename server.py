@@ -78,6 +78,7 @@ class State:
     def __init__(self):
         GLOBAL_CONFIGURATION.require('bonk_id')
         GLOBAL_CONFIGURATION.require('fuck_fly_agaric_id')
+        GLOBAL_CONFIGURATION.require('buffy_id')
 
         self.user_refresh_token = None
         self.hotkeys = KeyCommands()
@@ -92,6 +93,10 @@ class State:
             'fuck_fly_agaric': ChannelRewardRedeem(
                 reward_id=GLOBAL_CONFIGURATION.get('fuck_fly_agaric_id'),
                 reward_redeem_path='api/fuck_fly_agaric',
+            ),
+            'buffy': ChannelRewardRedeem(
+                reward_id=GLOBAL_CONFIGURATION.get('buffy_id'),
+                reward_redeem_path='api/buffy',
             ),
         }
 
@@ -142,6 +147,10 @@ class State:
             logger.error('Error trying to explode fly agaric: {e}')
         else:
             nava.play('boom.wav', async_mode=True)
+
+    def buffy(self):
+        logger.info('buffy. buffy we gotta slay demons. buffy please')
+        nava.play('buffy.wav', async_mode=True)
 
     def _resubscribe(self, attempt):
         payload = requests.post('https://localhost/api/unsubscribe-all', verify=False)
@@ -289,6 +298,7 @@ class WebHandler:
         return {
             'bonk': Endpoints.BonkRedeem,
             'fuck_fly_agaric': Endpoints.FuckFlyAgaricRedeem,
+            'buffy': Endpoints.Buffy,
             'stop': Endpoints.Stop,
             'stream_stop': Endpoints.StreamStop,
             'app_access_token': Endpoints.AppAccessToken,
@@ -303,6 +313,7 @@ class WebHandler:
         return (
             '/api/bonk', 'bonk',
             '/api/fuck_fly_agaric', 'fuck_fly_agaric',
+            '/api/buffy', 'buffy',
             '/api/stop', 'stop',
             '/api/stream_stop', 'stream_stop',
             '/exists', 'exists',
@@ -515,6 +526,12 @@ class Endpoints:
         @require_twitch('fuck_fly_agaric')
         def POST(self):
             self.state.fuck_fly_agaric()
+            return webapi.ok()
+
+    class Buffy(BaseEndpoint):
+        @require_twitch('buffy')
+        def POST(self):
+            self.state.buffy()
             return webapi.ok()
 
     class Subscribe(BaseEndpoint):
