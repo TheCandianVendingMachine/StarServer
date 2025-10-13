@@ -159,7 +159,7 @@ class State:
     def foxy(self):
         logger.info('jumpscare incoming')
         scene = GetScene('Main Scene')
-        foxy = GetItem(scene.response['resourceId'], 'Foxy')
+        foxy = GetItem(scene.response['resourceId'], 'Foxy jumpscare')
         def jumpscare(foxy):
             SetItemVisibility(foxy, True)
             threading.Timer(
