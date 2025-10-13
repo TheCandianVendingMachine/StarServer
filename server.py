@@ -98,6 +98,10 @@ class State:
                 reward_id=GLOBAL_CONFIGURATION.get('buffy_id'),
                 reward_redeem_path='api/buffy',
             ),
+            'foxy': ChannelRewardRedeem(
+                reward_id=GLOBAL_CONFIGURATION.get('foxy_id'),
+                reward_redeem_path='api/foxy',
+            ),
         }
 
         self.subscriptions = { key: Subscription(self.requests[key]) for key in self.requests.keys() }
@@ -151,6 +155,23 @@ class State:
     def buffy(self):
         logger.info('buffy. buffy we gotta slay demons. buffy please')
         nava.play('buffy.wav', async_mode=True)
+
+    def foxy(self):
+        logger.info('jumpscare incoming')
+        scene = GetScene('Main Scene')
+        foxy = GetItem(scene.response['resourceId'], 'Foxy')
+        def jumpscare(foxy):
+            SetItemVisibility(foxy, True)
+            threading.Timer(
+                1.0,
+                lambda foxy: SetItemVisibility(foxy, False),
+                args=[foxy.response['resourceId']]
+            ).start()
+        threading.Timer(
+            5.0,
+            jumpscare,
+            args=[foxy.response['resourceId']]
+        ).start()
 
     def _resubscribe(self, attempt):
         payload = requests.post('https://localhost/api/unsubscribe-all', verify=False)
@@ -299,6 +320,7 @@ class WebHandler:
             'bonk': Endpoints.BonkRedeem,
             'fuck_fly_agaric': Endpoints.FuckFlyAgaricRedeem,
             'buffy': Endpoints.Buffy,
+            'foxy': Endpoints.Foxy,
             'stop': Endpoints.Stop,
             'stream_stop': Endpoints.StreamStop,
             'app_access_token': Endpoints.AppAccessToken,
@@ -314,6 +336,7 @@ class WebHandler:
             '/api/bonk', 'bonk',
             '/api/fuck_fly_agaric', 'fuck_fly_agaric',
             '/api/buffy', 'buffy',
+            '/api/foxy', 'foxy',
             '/api/stop', 'stop',
             '/api/stream_stop', 'stream_stop',
             '/exists', 'exists',
@@ -532,6 +555,12 @@ class Endpoints:
         @require_twitch('buffy')
         def POST(self):
             self.state.buffy()
+            return webapi.ok()
+
+    class Foxy(BaseEndpoint):
+        @require_twitch('foxy')
+        def POST(self):
+            self.state.foxy()
             return webapi.ok()
 
     class Subscribe(BaseEndpoint):
