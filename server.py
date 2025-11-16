@@ -25,6 +25,7 @@ from cheroot.ssl.builtin import BuiltinSSLAdapter
 from streamlabs import GetScene, GetFolder, GetItem, SetItemVisibility
 from environment import ENVIRONMENT
 from log import Logger
+import random
 
 logger = logging.getLogger('wsgilog.log')
 
@@ -157,18 +158,23 @@ class State:
         nava.play('buffy.wav', async_mode=True)
 
     def foxy(self):
-        logger.info('jumpscare incoming')
+        seconds = 60 * max(0, random.gauss(
+                mu=5.0,
+                sigma=2.5
+            )
+        )
+        logger.info(f'jumpscare incoming in {seconds:.2f} seconds ({(seconds / 60):.2f} minutes)')
         scene = GetScene('Main Scene')
         foxy = GetItem(scene.response['resourceId'], 'Foxy jumpscare')
         def jumpscare(foxy):
             SetItemVisibility(foxy, True)
             threading.Timer(
-                1.0,
+                0.9,
                 lambda foxy: SetItemVisibility(foxy, False),
                 args=[foxy]
             ).start()
         threading.Timer(
-            5.0,
+            seconds,
             jumpscare,
             args=[foxy.response['resourceId']]
         ).start()
