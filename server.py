@@ -167,6 +167,8 @@ class State:
         scene = GetScene('Main Scene')
         foxy = GetItem(scene.response['resourceId'], 'Foxy jumpscare')
         def jumpscare(foxy):
+            logger.info('gotchya bitch')
+            nava.play('foxy.wav', async_mode=True)
             SetItemVisibility(foxy, True)
             threading.Timer(
                 0.9,
