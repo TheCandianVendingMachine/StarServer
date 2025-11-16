@@ -165,7 +165,7 @@ class State:
             threading.Timer(
                 1.0,
                 lambda foxy: SetItemVisibility(foxy, False),
-                args=[foxy.response['resourceId']]
+                args=[foxy]
             ).start()
         threading.Timer(
             5.0,
